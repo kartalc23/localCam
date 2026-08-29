@@ -13,8 +13,8 @@ export const config = {
 
   // Sanal kameranin sabit cikti formati. Telefon yatay/dikey donse de
   // cihazin cozunurlugu degismesin diye letterbox/pillarbox uygulanir.
-  width: num(process.env.LOCALCAM_WIDTH, 1280),
-  height: num(process.env.LOCALCAM_HEIGHT, 720),
+  width: num(process.env.LOCALCAM_WIDTH, 1920),
+  height: num(process.env.LOCALCAM_HEIGHT, 1080),
   fps: num(process.env.LOCALCAM_FPS, 30),
 
   httpsPort: num(process.env.LOCALCAM_HTTPS_PORT, 8443),

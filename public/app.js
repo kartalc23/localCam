@@ -20,11 +20,14 @@ const BITRATE = { "1920x1080": 5_000_000, "1280x720": 3_000_000, "960x540": 1_80
 // ------------------------------------------------------------- ayar hafizasi --
 
 const PREFS = "localcam.prefs";
+const PREFS_VERSION = 2; // 2: varsayilan cozunurluk 1080p'ye tasindi
 
 function loadPrefs() {
   let p = {};
   try { p = JSON.parse(localStorage.getItem(PREFS) || "{}"); } catch { /* bozuk kayit */ }
-  if (p.res) els.res.value = p.res;
+  // Eski surumden gelen cozunurluk tercihi bir kez atlanir ki yeni varsayilan (1080p) gecsin
+  const fresh = p.v !== PREFS_VERSION;
+  if (!fresh && p.res && [...els.res.options].some((o) => o.value === p.res)) els.res.value = p.res;
   if (p.mode) els.mode.value = p.mode;
   S.mirror = !!p.mirror;
   S.rotate = Number(p.rotate) || 0;
@@ -36,6 +39,7 @@ function loadPrefs() {
   els.rotate.textContent = `${S.rotate}\u00b0`;
   els.auto.setAttribute("aria-pressed", String(S.auto));
   els.auto.textContent = S.auto ? "Acik" : "Kapali";
+  if (fresh) savePrefs();
   return p;
 }
 
@@ -43,6 +47,7 @@ function savePrefs() {
   try {
     localStorage.setItem(PREFS, JSON.stringify({
       res: els.res.value, mode: els.mode.value, camera: els.camera.value,
+      v: PREFS_VERSION,
       mirror: S.mirror, rotate: S.rotate, fill: S.fill, auto: S.auto,
     }));
   } catch { /* ozel mod olabilir */ }
