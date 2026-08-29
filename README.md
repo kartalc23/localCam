@@ -20,8 +20,12 @@ cd localCam
 npm install
 
 sudo bash scripts/setup-v4l2.sh     # /dev/video10 sanal kamerasını oluşturur (kalıcı)
+sudo bash scripts/setup-firewall.sh # telefon erişebilsin diye portları açar (ufw/firewalld)
 bash scripts/install-service.sh     # açılışta otomatik başlasın + tepsi ikonu
 ```
+
+`setup-firewall.sh` kuralları yalnızca kendi alt ağına verir (ör. `192.168.1.0/24`), internete
+açmaz. Güvenlik duvarı kullanmıyorsan bu adımı atlayabilirsin.
 
 `setup-v4l2.sh` seni `video` grubuna ekler; ilk kurulumdan sonra bir kez çıkış/giriş yapman gerekebilir.
 
@@ -68,6 +72,7 @@ Sunucu tarafı ortam değişkenleriyle ayarlanır:
 | `LOCALCAM_HTTPS_PORT` | `8443` | Telefon arayüzü |
 | `LOCALCAM_HTTP_PORT` | `8080` | Masaüstü sayfası + yönlendirme |
 | `LOCALCAM_RTP_PORT` | `5004` | WebRTC → ffmpeg yerel RTP portu |
+| `LOCALCAM_ICE_PORTS` | `50000-50019` | WebRTC ICE için sabit UDP aralığı (güvenlik duvarı kuralı buna göre) |
 | `LOCALCAM_FFLOG` | `error` | ffmpeg log seviyesi (`info` ile ayrıntı) |
 | `LOCALCAM_VERBOSE` | `0` | `1` yapınca ffmpeg/WebRTC ayrıntıları |
 

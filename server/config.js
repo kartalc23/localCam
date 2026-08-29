@@ -23,6 +23,10 @@ export const config = {
   // WebRTC'den gelen RTP'nin ffmpeg'e aktarildigi yerel UDP portu
   rtpPort: num(process.env.LOCALCAM_RTP_PORT, 5004),
 
+  // ICE icin sabit UDP araligi: guvenlik duvarinda dar bir kural yazilabilsin diye.
+  icePortRange: (process.env.LOCALCAM_ICE_PORTS || "50000-50019")
+    .split("-").map(Number),
+
   publicDir: path.join(ROOT, "public"),
   certDir: process.env.LOCALCAM_CERT_DIR || path.join(ROOT, ".certs"),
   runDir: path.join(ROOT, ".run"),

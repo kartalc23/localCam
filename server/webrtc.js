@@ -46,7 +46,11 @@ export class WebRtcReceiver {
   async handleOffer(offerSdp, sendIce) {
     await this.close();
 
-    const pc = new RTCPeerConnection({ codecs: { video: CODECS }, iceServers: [] });
+    const pc = new RTCPeerConnection({
+      codecs: { video: CODECS },
+      iceServers: [],
+      icePortRange: config.icePortRange,
+    });
     this.pc = pc;
 
     const transceiver = pc.addTransceiver("video", { direction: "recvonly" });
