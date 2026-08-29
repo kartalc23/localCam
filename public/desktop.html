@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>localCam</title>
+<link rel="icon" href="/favicon.png">
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --muted:#8b949e;
+          --accent:#2f81f7; --ok:#3fb950; --danger:#f85149; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--fg); display:flex;
+         align-items:center; justify-content:center; padding:32px;
+         font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px;
+          padding:28px; width:min(520px,100%); }
+  h1 { margin:0 0 4px; font-size:20px; display:flex; align-items:center; gap:10px; }
+  h1 img { width:26px; height:26px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 20px; }
+  .qr { background:#fff; border-radius:12px; padding:12px; width:fit-content; margin:0 auto 18px; }
+  .qr img { display:block; width:232px; height:232px; image-rendering:pixelated; }
+  .status { display:flex; align-items:center; gap:9px; padding:11px 13px; border:1px solid var(--line);
+            border-radius:10px; background:#0d1117; margin-bottom:14px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted); flex:none; }
+  .dot.live { background:var(--ok); box-shadow:0 0 0 4px rgba(63,185,80,.18); }
+  .dot.bad { background:var(--danger); }
+  .row { display:flex; gap:8px; margin-bottom:10px; }
+  input { flex:1; background:#0d1117; border:1px solid var(--line); color:var(--fg);
+          border-radius:9px; padding:10px 12px; font-family:ui-monospace,monospace; font-size:13px; }
+  button { background:var(--accent); border:0; color:#fff; border-radius:9px; padding:10px 16px;
+           font-size:14px; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--fg); }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:18px 0 0;
+       font-size:13px; color:var(--muted); }
+  dd { margin:0; color:var(--fg); font-family:ui-monospace,monospace; }
+  .hint { color:var(--muted); font-size:12px; margin:18px 0 0; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1><img src="/icon-192.png" alt=""> localCam</h1>
+  <p class="sub">iPhone kamerasini bu bilgisayarda sanal webcam olarak kullan.</p>
+
+  <div class="qr"><img id="qr" src="/qr.png" alt="QR kod"></div>
+
+  <div class="status"><span class="dot" id="dot"></span><span id="statusText">baglaniyor...</span></div>
+
+  <div class="row">
+    <input id="url" readonly value="">
+    <button id="copy">Kopyala</button>
+  </div>
+  <div class="row">
+    <button class="ghost" id="openCert">Sertifikayi indir</button>
+    <button class="ghost" id="refresh">Yenile</button>
+  </div>
+
+  <dl>
+    <dt>Sanal kamera</dt><dd id="device">-</dd>
+    <dt>Cozunurluk</dt><dd id="res">-</dd>
+    <dt>Yontem</dt><dd id="mode">-</dd>
+    <dt>mDNS</dt><dd id="mdns">-</dd>
+  </dl>
+
+  <p class="hint">Telefonda QR'i okut &rarr; <b>Yayini baslat</b>. Sonra Zoom / Meet / OBS / Discord icinde
+  kamera olarak <b>localCam</b>'i sec. Guvenlik uyarisini bir daha gormemek icin sertifikayi telefona kur.</p>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function tick() {
+  try {
+    const s = await (await fetch("/status", { cache: "no-store" })).json();
+    $("url").value = s.phoneUrl;
+    $("device").textContent = s.device + (s.deviceReady ? "" : "  (yok!)");
+    $("res").textContent = s.resolution;
+    $("mdns").textContent = s.mdnsUrl;
+    $("mode").textContent = s.connected ? (s.publisherMode === "webrtc" ? "WebRTC / H.264" : "MJPEG") : "-";
+
+    if (s.error) { $("dot").className = "dot bad"; $("statusText").textContent = "hata: " + s.error; }
+    else if (!s.deviceReady) { $("dot").className = "dot bad"; $("statusText").textContent = "sanal kamera yok - sudo bash scripts/setup-v4l2.sh"; }
+    else if (s.connected) { $("dot").className = "dot live"; $("statusText").textContent = "iPhone bagli, yayin akiyor"; }
+    else { $("dot").className = "dot"; $("statusText").textContent = "iPhone bekleniyor"; }
+  } catch {
+    $("dot").className = "dot bad";
+    $("statusText").textContent = "sunucuya ulasilamiyor";
+  }
+}
+
+$("copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText($("url").value);
+  $("copy").textContent = "Kopyalandi";
+  setTimeout(() => ($("copy").textContent = "Kopyala"), 1500);
+});
+$("openCert").addEventListener("click", () => (location.href = "/localcam-ca.crt"));
+$("refresh").addEventListener("click", () => { $("qr").src = "/qr.png?" + Date.now(); tick(); });
+
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>
