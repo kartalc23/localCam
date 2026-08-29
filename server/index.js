@@ -21,6 +21,7 @@ const rtc = new WebRtcReceiver(sink, (m) => config.verbose && log(m));
 let publisher = null; // aktif telefon baglantisi
 let publisherMode = null;
 let lastError = null;
+let phoneStats = null; // telefonun kendi bildirdigi gonderim istatistikleri
 let frames = 0;
 let framesBytes = 0;
 // Telefon kisa sureligine kopunca (ekran kilidi, WiFi gecisi) hemen "bekleniyor"
@@ -119,7 +120,8 @@ function statusJson() {
     sourceResolution: sink.sourceSize,
     receivingFrames: sink.live,
     transform: sink.transform,
-    webrtc: rtc.stats,
+    webrtc: { ...rtc.stats, state: rtc.state },
+    phone: phoneStats,
     mjpeg: { frames, bytes: framesBytes },
     phoneUrl: phoneUrl(),
     mdnsUrl: `https://${mdnsHost()}:${config.httpsPort}/`,
@@ -180,7 +182,13 @@ const httpServer = http.createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ server: httpsServer, path: "/ws" });
 
-wss.on("connection", (ws) => {
+let wsSeq = 0;
+
+wss.on("connection", (ws, req) => {
+  ws.id = ++wsSeq;
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
+  log(`ws#${ws.id} baglandi (${req.socket.remoteAddress})`);
   send(ws, { t: "hello", resolution: { width: config.width, height: config.height, fps: config.fps } });
 
   ws.on("message", async (data, isBinary) => {
@@ -202,13 +210,14 @@ wss.on("connection", (ws) => {
           if (!check.ok) return send(ws, { t: "error", message: check.reason });
           await takeOver(ws);
           publisherMode = "webrtc";
+          phoneStats = null;
           rtc.onEnd = () => {
             if (publisher === ws) goIdle("baglanti bekleniyor", { grace: RECONNECT_GRACE_MS });
           };
           const answer = await rtc.handleOffer(msg.sdp, (c) => send(ws, { t: "ice", candidate: c }));
           send(ws, { t: "answer", sdp: answer });
           send(ws, { t: "ready", mode: "webrtc" });
-          log("WebRTC yayini basladi");
+          log(`ws#${ws.id} WebRTC yayini basladi`);
           syncTray();
           notify("localCam", "iPhone bagli - H.264");
           break;
@@ -242,6 +251,9 @@ wss.on("connection", (ws) => {
         case "stop":
           if (ws === publisher) await goIdle();
           break;
+        case "stats":
+          if (ws === publisher) phoneStats = { ...msg.stats, at: new Date().toISOString() };
+          break;
         case "ping":
           send(ws, { t: "pong", sinkMode: sink.mode });
           break;
@@ -252,11 +264,33 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
+    log(`ws#${ws.id} kapandi (kod=${code}${reason?.length ? ` ${reason}` : ""}${ws === publisher ? ", yayinciydi" : ""})`);
     // Kullanici durdurmadiysa kisa bir tolerans taniyip donmus kareyi koru.
     if (ws === publisher) goIdle("baglanti bekleniyor", { grace: RECONNECT_GRACE_MS });
   });
+
+  ws.on("error", (err) => log(`ws#${ws.id} hata: ${err.message}`));
 });
+
+// ffmpeg cozmeye baslayana kadar anahtar kare istemeyi birakma: IDR gelmeden
+// tek bir kare bile uretilemez ve kamera bos gorunur.
+const keyframeWatch = setInterval(() => {
+  if (publisherMode === "webrtc" && sink.mode === "webrtc" && !sink.live) rtc.requestKeyframe();
+}, 1000);
+
+// Bosta kalan baglantiyi ag ekipmanlari dusurmesin; olen baglantiyi da temizler.
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      log(`ws#${ws.id} yanit vermiyor, kapatiliyor`);
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 15000);
 
 // ------------------------------------------------------------------ boot --
 
@@ -276,6 +310,8 @@ async function banner() {
 
 async function shutdown() {
   log("kapatiliyor...");
+  clearInterval(heartbeat);
+  clearInterval(keyframeWatch);
   await rtc.close();
   await sink.stop();
   await tray.stop();

@@ -308,14 +308,41 @@ async function updateStats() {
   let line = "";
   if (S.pc) {
     const stats = await S.pc.getStats();
+    let report = null;
+    let pair = null;
     stats.forEach((r) => {
+      if (r.type === "candidate-pair" && r.state === "succeeded") pair = r;
       if (r.type === "outbound-rtp" && r.kind === "video") {
+        report = r;
         const now = performance.now();
         const kbps = Math.round(((r.bytesSent - S.lastBytes) * 8) / (now - S.lastAt));
         S.lastBytes = r.bytesSent;
         S.lastAt = now;
         line = `${r.frameWidth || "?"}x${r.frameHeight || "?"} ${Math.round(r.framesPerSecond || 0)}fps ${kbps}kbps`;
       }
+    });
+    // Sunucu tarafinda teshis edebilmek icin telefonun kendi gordugu rakamlar
+    const track = S.stream?.getVideoTracks?.()[0];
+    send({
+      t: "stats",
+      stats: {
+        gonderilenKare: report?.framesSent ?? null,
+        kodlananKare: report?.framesEncoded ?? null,
+        bayt: report?.bytesSent ?? null,
+        genislik: report?.frameWidth ?? null,
+        yukseklik: report?.frameHeight ?? null,
+        fps: report?.framesPerSecond ?? null,
+        kaliteSiniri: report?.qualityLimitationReason ?? null,
+        pcDurum: S.pc?.connectionState ?? null,
+        iceDurum: S.pc?.iceConnectionState ?? null,
+        adayCifti: pair ? `${pair.localCandidateId}->${pair.remoteCandidateId}` : null,
+        kameraDurum: track ? `${track.readyState}${track.muted ? " (muted)" : ""}` : "yok",
+        kameraAyar: track ? JSON.stringify(track.getSettings()) : null,
+        wakeLockDestegi: "wakeLock" in navigator,
+        wakeLockTutuluyor: !!S.wakeLock && !S.wakeLock.released,
+        sayfaGorunur: document.visibilityState,
+        ekranAcikSure: Math.round(performance.now() / 1000),
+      },
     });
   } else if (S.streaming) {
     const now = performance.now();

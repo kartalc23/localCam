@@ -35,8 +35,6 @@ const CODECS = [
   new RTCRtpCodecParameters({ mimeType: "video/VP8", clockRate: 90000, rtcpFeedback: FEEDBACK }),
 ];
 
-const PLI_SCHEDULE = [0, 300, 800, 1600, 3000];
-
 /**
  * Telefondan gelen WebRTC video track'ini alir, RTP paketlerini
  * ffmpeg'in dinledigi yerel UDP portuna aynen aktarir.
@@ -48,9 +46,10 @@ export class WebRtcReceiver {
     this.pc = null;
     this.udp = null;
     this.timers = [];
-    this.stats = { packets: 0, bytes: 0, since: 0, codec: null };
+    this.stats = { packets: 0, bytes: 0, since: 0, codec: null, pli: 0 };
     this.transceiver = null;
     this.ssrc = null;
+    this.state = "new";
     this.onEnd = () => {};
   }
 
@@ -76,6 +75,7 @@ export class WebRtcReceiver {
     });
 
     pc.connectionStateChange.subscribe((state) => {
+      this.state = state;
       this.log(`webrtc durumu: ${state}`);
       if (state === "failed" || state === "closed" || state === "disconnected") {
         this.close().then(() => this.onEnd(state));
@@ -100,16 +100,16 @@ export class WebRtcReceiver {
     }
   }
 
-  /** ffmpeg yeniden baslatildiginda telefondan taze keyframe iste. */
+  /** Telefondan taze anahtar kare (IDR) ister. ffmpeg anahtar kare gelmeden
+      hicbir sey cozemez, o yuzden kare akana kadar bu israrla tekrarlanir. */
   requestKeyframe() {
-    for (const delay of PLI_SCHEDULE) {
-      this.timers.push(
-        setTimeout(() => {
-          if (this.ssrc !== null && this.pc && this.transceiver) {
-            try { this.transceiver.receiver.sendRtcpPLI(this.ssrc); } catch { /* kapanmis */ }
-          }
-        }, delay),
-      );
+    if (this.ssrc === null || !this.pc || !this.transceiver) return false;
+    try {
+      this.transceiver.receiver.sendRtcpPLI(this.ssrc);
+      this.stats.pli++;
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -117,7 +117,7 @@ export class WebRtcReceiver {
     const codec = track.codec;
     const encodingName = (codec?.mimeType || "video/H264").split("/")[1];
     const payloadType = codec?.payloadType ?? 96;
-    this.stats = { packets: 0, bytes: 0, since: Date.now(), codec: encodingName };
+    this.stats = { packets: 0, bytes: 0, since: Date.now(), codec: encodingName, pli: 0 };
     this.transceiver = transceiver;
     this.log(`track alindi: ${encodingName} pt=${payloadType}`);
 
