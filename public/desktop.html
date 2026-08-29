@@ -82,6 +82,7 @@ async function tick() {
 
     if (s.error) { $("dot").className = "dot bad"; $("statusText").textContent = "hata: " + s.error; }
     else if (!s.deviceReady) { $("dot").className = "dot bad"; $("statusText").textContent = "sanal kamera yok - sudo bash scripts/setup-v4l2.sh"; }
+    else if (s.connected && !s.receivingFrames) { $("dot").className = "dot bad"; $("statusText").textContent = "iPhone bagli ama kare gelmiyor - telefonda sayfa on planda mi?"; }
     else if (s.connected) { $("dot").className = "dot live"; $("statusText").textContent = "iPhone bagli, yayin akiyor"; }
     else { $("dot").className = "dot"; $("statusText").textContent = "iPhone bekleniyor"; }
   } catch {

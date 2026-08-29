@@ -16,7 +16,8 @@ const FONT = "sans";
    kamerayi kaybetmesine yol aciyordu. */
 
 const FRAME_BYTES = () => (config.width * config.height * 3) / 2; // yuv420p
-const IDLE_INTERVAL = 100; // bekleme karesi yazma araligi (ms)
+const TICK_INTERVAL = 100;  // cihazi besleme araligi (ms)
+const SOURCE_SILENT_MS = 250; // kaynak bu sureden fazla susarsa son kare tekrarlanir
 const WRITER_RETRY = 800;
 
 function transformFilter({ mirror = false, rotate = 0 } = {}) {
@@ -57,7 +58,8 @@ export class V4L2Sink extends EventEmitter {
     this.idleFrame = null;   // hazir bekleme karesi (ham yuv420p)
     this.lastFrame = null;   // son canli kare: kopmada donmus goruntu icin
     this.holdUntil = 0;
-    this.idleTimer = null;
+    this.lastFrameAt = 0;
+    this.tickTimer = null;
     this.queue = Promise.resolve();
     this.lastRtp = null;
     this.stopping = false;
@@ -109,7 +111,7 @@ export class V4L2Sink extends EventEmitter {
     if (!this.check().ok) return;
     await this.renderIdleFrame();
     this.#startWriter();
-    this.idleTimer = setInterval(() => this.#feedIdle(), IDLE_INTERVAL);
+    this.tickTimer = setInterval(() => this.#tick(), TICK_INTERVAL);
   }
 
   #startWriter() {
@@ -154,11 +156,20 @@ export class V4L2Sink extends EventEmitter {
     return w.stdin.write(frame);
   }
 
-  /** Kaynak yokken: once son canli kare (donmus), sonra bekleme karti. */
-  #feedIdle() {
-    if (this.source) return;
-    const frame = Date.now() < this.holdUntil && this.lastFrame ? this.lastFrame : this.idleFrame;
+  /* Cihaz ASLA karesiz kalmamali: yoksa tarayici kamerayi acar ama goruntu
+     alamaz. Kaynak susarsa (telefon arka plana atildi, ekran kilitlendi, ag
+     tikandi) son kare tekrarlanir; hic kare gelmediyse bekleme karti yazilir. */
+  #tick() {
+    const now = Date.now();
+    if (now - this.lastFrameAt < SOURCE_SILENT_MS) return; // kaynak zaten besliyor
+    const keepLast = this.lastFrame && (this.source || now < this.holdUntil);
+    const frame = keepLast ? this.lastFrame : this.idleFrame;
     if (frame) this.#write(frame);
+  }
+
+  /** Son bir saniye icinde gercek kare geldi mi? */
+  get live() {
+    return Date.now() - this.lastFrameAt < 1000;
   }
 
   // --------------------------------------------------------------- kaynak --
@@ -177,6 +188,7 @@ export class V4L2Sink extends EventEmitter {
       while (pending.length >= frameBytes) {
         const frame = pending.subarray(0, frameBytes);
         this.lastFrame = Buffer.from(frame);
+        this.lastFrameAt = Date.now();
         this.#write(frame);
         pending = pending.subarray(frameBytes);
       }
@@ -295,7 +307,7 @@ export class V4L2Sink extends EventEmitter {
 
   async stop() {
     this.stopping = true;
-    clearInterval(this.idleTimer);
+    clearInterval(this.tickTimer);
     await this.#killSource();
     const w = this.writer;
     this.writer = null;
