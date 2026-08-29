@@ -1,13 +1,27 @@
 import dgram from "node:dgram";
-import { RTCPeerConnection, RTCRtpCodecParameters } from "werift";
+import {
+  RTCPeerConnection,
+  RTCRtpCodecParameters,
+  useAbsSendTime,
+  useREMB,
+  useSdesMid,
+  useTWCC,
+  useTransportWideCC,
+} from "werift";
 import { config } from "./config.js";
 
+// transport-cc + REMB olmadan iPhone'un bant genisligi tahmincisi geri bildirim
+// alamiyor ve en dusuk hizda takilip cozunurlugu asiri dusuruyor.
 const FEEDBACK = [
   { type: "nack" },
   { type: "nack", parameter: "pli" },
   { type: "ccm", parameter: "fir" },
-  { type: "goog-remb" },
+  useREMB(),
+  useTWCC(),
 ];
+
+// abs-send-time ve transport-wide-cc uzantilari olmadan yukaridaki geri bildirim uretilemez
+const HEADER_EXTENSIONS = [useSdesMid(), useAbsSendTime(), useTransportWideCC()];
 
 // iPhone'da H.264 donanim encoder'i kullanilir: dusuk gecikme, dusuk pil tuketimi.
 const CODECS = [
@@ -15,7 +29,8 @@ const CODECS = [
     mimeType: "video/H264",
     clockRate: 90000,
     rtcpFeedback: FEEDBACK,
-    parameters: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+    // seviye 5.0: 3.1 bildirmek Safari'yi 720p tavanina sikistiriyordu
+    parameters: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e032",
   }),
   new RTCRtpCodecParameters({ mimeType: "video/VP8", clockRate: 90000, rtcpFeedback: FEEDBACK }),
 ];
@@ -48,6 +63,7 @@ export class WebRtcReceiver {
 
     const pc = new RTCPeerConnection({
       codecs: { video: CODECS },
+      headerExtensions: { video: HEADER_EXTENSIONS },
       iceServers: [],
       icePortRange: config.icePortRange,
     });

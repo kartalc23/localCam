@@ -169,7 +169,11 @@ async function startWebRtc(stream) {
 
   try {
     const params = sender.getParameters();
-    params.encodings = [{ maxBitrate: BITRATE[els.res.value] || 3_000_000 }];
+    // Var olan encoding'i degistir: diziyi komple degistirmek Safari'de
+    // olceklendirme ayarlarini sifirliyor
+    if (!params.encodings?.length) params.encodings = [{}];
+    params.encodings[0].maxBitrate = BITRATE[els.res.value] || 3_000_000;
+    params.encodings[0].scaleResolutionDownBy = 1;
     params.degradationPreference = "maintain-resolution";
     await sender.setParameters(params);
   } catch { /* Safari bazi surumlerde reddediyor, kritik degil */ }

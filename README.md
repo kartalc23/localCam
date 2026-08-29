@@ -115,6 +115,12 @@ biraz daha yüksektir.
 
 **Gecikme yüksek** — çözünürlüğü 720p'de tut, telefonu 5 GHz ağa bağla.
 
+**Görüntü bulanık / "zoomlu" duruyor** — masaüstü sayfasındaki **Telefondan gelen** satırına bak.
+Orada 640x480'den küçük bir değer görüyorsan telefon bant genişliği tahmini yüzünden çözünürlüğü
+düşürmüştür; yayın başladıktan sonra 10-15 saniye içinde toparlanması gerekir. Toparlamıyorsa
+telefonu router'a yaklaştır veya 5 GHz ağa al. Görüş açısı dar geliyorsa çözünürlük listesinden
+**geniş (4:3)** seçeneklerinden birini seç — iPhone sensörü 4:3, 16:9 istemek kenarları kırpar.
+
 ## Gereksinimler
 
 Node 20+, ffmpeg, openssl, `v4l2loopback` modülü (CachyOS/Arch çekirdeklerinde hazır gelir),
