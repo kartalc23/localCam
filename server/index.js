@@ -23,6 +23,11 @@ let publisherMode = null;
 let lastError = null;
 let frames = 0;
 let framesBytes = 0;
+let idleTimer = null;
+
+// Telefon kisa sureligine kopunca (ekran kilidi, WiFi gecisi) hemen "bekleniyor"
+// kartina dusme: ffmpeg'i calisir birak, tuketiciler son kareyi donmus gorsun.
+const RECONNECT_GRACE_MS = 12000;
 
 const certs = ensureCertificates();
 const phoneUrl = () => {
@@ -72,12 +77,19 @@ function send(ws, obj) {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
 
-async function goIdle(reason = "iPhone bekleniyor") {
+async function goIdle(reason = "iPhone bekleniyor", { grace = 0 } = {}) {
   const had = !!publisher;
   publisher = null;
   publisherMode = null;
+  clearTimeout(idleTimer);
   await rtc.close();
-  await sink.startIdle(reason);
+
+  if (grace > 0 && sink.mode !== "idle" && sink.mode !== "off") {
+    // ffmpeg oldugu gibi kalir; girdi kesildigi icin son kare donar
+    idleTimer = setTimeout(() => sink.startIdle(reason).then(syncTray), grace);
+  } else {
+    await sink.startIdle(reason);
+  }
   syncTray();
   if (had) notify("localCam", "Telefon yayini durdu");
 }
@@ -91,6 +103,7 @@ async function takeOver(ws) {
   }
   publisher = ws;
   lastError = null;
+  clearTimeout(idleTimer);
 }
 
 sink.on("crash", ({ mode, code, stderr }) => {
@@ -198,7 +211,9 @@ wss.on("connection", (ws) => {
           if (!check.ok) return send(ws, { t: "error", message: check.reason });
           await takeOver(ws);
           publisherMode = "webrtc";
-          rtc.onEnd = () => { if (publisher === ws) goIdle("baglanti koptu"); };
+          rtc.onEnd = () => {
+            if (publisher === ws) goIdle("baglanti bekleniyor", { grace: RECONNECT_GRACE_MS });
+          };
           const answer = await rtc.handleOffer(msg.sdp, (c) => send(ws, { t: "ice", candidate: c }));
           send(ws, { t: "answer", sdp: answer });
           send(ws, { t: "ready", mode: "webrtc" });
@@ -225,7 +240,11 @@ wss.on("connection", (ws) => {
           break;
         }
         case "transform":
-          await sink.setTransform({ mirror: !!msg.mirror, rotate: Number(msg.rotate) || 0 });
+          await sink.setTransform({
+            mirror: !!msg.mirror,
+            rotate: Number(msg.rotate) || 0,
+            fill: msg.fill !== false,
+          });
           if (publisherMode === "webrtc") rtc.requestKeyframe();
           send(ws, { t: "transform", ...sink.transform });
           break;
@@ -243,7 +262,8 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    if (ws === publisher) goIdle();
+    // Kullanici durdurmadiysa kisa bir tolerans taniyip donmus kareyi koru.
+    if (ws === publisher) goIdle("baglanti bekleniyor", { grace: RECONNECT_GRACE_MS });
   });
 });
 

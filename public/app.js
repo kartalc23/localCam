@@ -10,6 +10,7 @@ const els = {
 
 const S = {
   ws: null, pc: null, stream: null, streaming: false, wakeLock: null,
+  desired: false, starting: false, fill: true,
   mirror: false, rotate: 0, mjpegTimer: null, statsTimer: null,
   reconnectDelay: 500, lastBytes: 0, lastAt: 0, mjpegFrames: 0,
 };
@@ -27,10 +28,12 @@ function loadPrefs() {
   if (p.mode) els.mode.value = p.mode;
   S.mirror = !!p.mirror;
   S.rotate = Number(p.rotate) || 0;
-  S.auto = !!p.auto;
+  S.fill = p.fill !== false;
+  S.auto = p.auto !== false; // varsayilan acik: uygulamayi acinca yayina gecsin
+  els.fill.setAttribute("aria-pressed", String(S.fill));
   els.mirror.setAttribute("aria-pressed", String(S.mirror));
   els.video.classList.toggle("mirror", S.mirror);
-  els.rotate.textContent = `Dondur ${S.rotate}\u00b0`;
+  els.rotate.textContent = `${S.rotate}\u00b0`;
   els.auto.setAttribute("aria-pressed", String(S.auto));
   els.auto.textContent = S.auto ? "Acik" : "Kapali";
   return p;
@@ -40,7 +43,7 @@ function savePrefs() {
   try {
     localStorage.setItem(PREFS, JSON.stringify({
       res: els.res.value, mode: els.mode.value, camera: els.camera.value,
-      mirror: S.mirror, rotate: S.rotate, auto: S.auto,
+      mirror: S.mirror, rotate: S.rotate, fill: S.fill, auto: S.auto,
     }));
   } catch { /* ozel mod olabilir */ }
 }
@@ -69,7 +72,7 @@ function connect() {
   };
   ws.onclose = () => {
     setStatus("sunucu baglantisi yok", "bad");
-    if (S.streaming) stopStreaming({ keepCamera: true });
+    if (S.streaming) stopStreaming({ keepCamera: true, user: false });
     setTimeout(connect, S.reconnectDelay);
     S.reconnectDelay = Math.min(S.reconnectDelay * 2, 8000);
   };
@@ -99,7 +102,7 @@ async function handleMessage(msg) {
       break;
     case "taken-over":
       showError("Baska bir cihaz yayini devraldi.");
-      stopStreaming();
+      stopStreaming({ user: true });
       break;
   }
 }
@@ -208,7 +211,10 @@ function startMjpeg(stream) {
 
 // ------------------------------------------------------------ baslat/dur --
 
-async function startStreaming() {
+async function startStreaming({ user = true } = {}) {
+  if (S.starting || S.streaming) return;
+  S.starting = true;
+  if (user) S.desired = true;
   showError("");
   setStatus("kamera aciliyor...", "warn");
   els.start.disabled = true;
@@ -221,6 +227,12 @@ async function startStreaming() {
     S.lastBytes = 0;
     S.lastAt = performance.now();
 
+    // iOS kamerayi arka planda kapatirsa denetci yeniden baslatsin
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+      S.streaming = false;
+      setStatus("kamera durdu, yeniden baglaniyor", "warn");
+    });
+
     if (els.mode.value === "webrtc") await startWebRtc(stream);
     else startMjpeg(stream);
 
@@ -230,16 +242,21 @@ async function startStreaming() {
     S.statsTimer = setInterval(updateStats, 1000);
     await requestWakeLock();
   } catch (err) {
+    // Izin reddedildiyse denetci bosuna donmesin, kullanici tekrar bassin
+    if (err.name === "NotAllowedError") S.desired = false;
     showError(cameraErrorText(err));
     setStatus("baslatilamadi", "bad");
     S.streaming = false;
   } finally {
+    S.starting = false;
     els.start.disabled = false;
+    updateOrientationHint();
   }
 }
 
-function stopStreaming({ keepCamera = false } = {}) {
+function stopStreaming({ keepCamera = false, user = true } = {}) {
   S.streaming = false;
+  if (user) S.desired = false;
   clearTimeout(S.mjpegTimer);
   clearInterval(S.statsTimer);
   S.pc?.close();
@@ -254,7 +271,8 @@ function stopStreaming({ keepCamera = false } = {}) {
   els.start.textContent = "Yayini baslat";
   els.start.classList.remove("live");
   els.stats.hidden = true;
-  setStatus("durduruldu");
+  els.orientHint.hidden = true;
+  setStatus(S.desired ? "yeniden baglaniyor" : "durduruldu", S.desired ? "warn" : "");
 }
 
 function waitForSocket() {
@@ -315,13 +333,37 @@ function releaseWakeLock() {
   S.wakeLock = null;
 }
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && S.streaming) requestWakeLock();
+  if (document.visibilityState !== "visible") return;
+  if (S.streaming) requestWakeLock();
+  supervise();
 });
+
+// Safari sayfayi geri yuklerse (kilit ekranindan donus) hemen toparla
+window.addEventListener("pageshow", () => supervise());
+window.addEventListener("online", () => { connect(); supervise(); });
+
+/** Yayinda olmasi gerekiyorsa ve degilse, sessizce yeniden baslat. */
+function supervise() {
+  if (!S.desired || S.streaming || S.starting) return;
+  if (document.visibilityState !== "visible") return;
+  connect();
+  startStreaming({ user: false }).catch(() => {});
+}
+
+setInterval(supervise, 2000);
 
 // ------------------------------------------------------------------ olaylar --
 
 function sendTransform() {
-  send({ t: "transform", mirror: S.mirror, rotate: S.rotate });
+  send({ t: "transform", mirror: S.mirror, rotate: S.rotate, fill: S.fill });
+}
+
+/** Dikey tutuldugunda kullaniciyi uyar: yatay tutarsa kare tam dolar. */
+function updateOrientationHint() {
+  const track = S.stream?.getVideoTracks?.()[0];
+  const st = track?.getSettings?.();
+  const portrait = st?.width && st?.height ? st.height > st.width : window.innerHeight > window.innerWidth;
+  els.orientHint.hidden = !(S.streaming && portrait);
 }
 
 els.start.addEventListener("click", () => (S.streaming ? stopStreaming() : startStreaming()));
@@ -331,6 +373,13 @@ els.auto.addEventListener("click", () => {
   els.auto.setAttribute("aria-pressed", String(S.auto));
   els.auto.textContent = S.auto ? "Acik" : "Kapali";
   savePrefs();
+});
+
+els.fill.addEventListener("click", () => {
+  S.fill = !S.fill;
+  els.fill.setAttribute("aria-pressed", String(S.fill));
+  savePrefs();
+  sendTransform();
 });
 
 els.mirror.addEventListener("click", () => {
@@ -343,7 +392,7 @@ els.mirror.addEventListener("click", () => {
 
 els.rotate.addEventListener("click", () => {
   S.rotate = (S.rotate + 90) % 360;
-  els.rotate.textContent = `Dondur ${S.rotate}°`;
+  els.rotate.textContent = `${S.rotate}°`;
   savePrefs();
   sendTransform();
 });
@@ -359,6 +408,9 @@ for (const el of [els.camera, els.res, els.mode]) {
     setTimeout(startStreaming, 300); // ayar degisince yayini yeniden kur
   });
 }
+
+window.addEventListener("orientationchange", () => setTimeout(updateOrientationHint, 400));
+window.addEventListener("resize", updateOrientationHint);
 
 const prefs = loadPrefs();
 connect();

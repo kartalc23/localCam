@@ -25,19 +25,24 @@ function outputArgs() {
 /** Telefon dikey/yatay dondugunde cihaz cozunurlugu sabit kalsin diye
  *  goruntu her zaman WxH icine sigdirilip ortalanir.
  *  Ayna/dondurme sunucu tarafinda uygulanir ki iki yayin modunda da ayni davransin. */
-function scaleFilter({ mirror = false, rotate = 0 } = {}) {
+function scaleFilter({ mirror = false, rotate = 0, fill = true } = {}) {
   const { width: w, height: h } = config;
   const pre = [];
   if (mirror) pre.push("hflip");
   if (rotate === 90) pre.push("transpose=1");
   else if (rotate === 180) pre.push("transpose=1", "transpose=1");
   else if (rotate === 270) pre.push("transpose=2");
-  return [
-    ...pre,
-    `scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=fast_bilinear`,
-    `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`,
-    "format=yuv420p",
-  ].join(",");
+
+  // fill: cerceveyi tamamen doldur, tasan kismi kirp (siyah bant yok)
+  // fit : goruntunun tamamini sigdir, bosluklari siyahla doldur
+  const fitting = fill
+    ? [`scale=${w}:${h}:force_original_aspect_ratio=increase:flags=bicubic`, `crop=${w}:${h}`]
+    : [
+        `scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=bicubic`,
+        `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`,
+      ];
+
+  return [...pre, ...fitting, "format=yuv420p"].join(",");
 }
 
 function idleFilter(text) {
@@ -57,7 +62,7 @@ export class V4L2Sink extends EventEmitter {
     this.mode = "off";
     this.queue = Promise.resolve();
     this.startedAt = 0;
-    this.transform = { mirror: false, rotate: 0 };
+    this.transform = { mirror: false, rotate: 0, fill: true };
     this.lastRtp = null;
   }
 
@@ -66,6 +71,7 @@ export class V4L2Sink extends EventEmitter {
     this.transform = {
       mirror: !!next.mirror,
       rotate: [0, 90, 180, 270].includes(next.rotate) ? next.rotate : 0,
+      fill: next.fill !== false,
     };
     if (this.mode === "webrtc" && this.lastRtp) return this.startRtp(this.lastRtp);
     if (this.mode === "mjpeg") return this.startMjpeg();

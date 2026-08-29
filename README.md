@@ -60,7 +60,22 @@ Kamera izni HTTPS istediği için sunucu kendi yerel CA'sını üretip sertifika
 ## Ayarlar
 
 Telefon arayüzünden: kamera (ön/arka/geniş açı), çözünürlük (540p/720p/1080p), yöntem (WebRTC/MJPEG),
-ayna ve 90° döndürme. Ayna/döndürme sunucu tarafında uygulanır, yani sanal kameraya da yansır.
+**Dolgu**, ayna ve 90° döndürme. Hepsi sunucu tarafında uygulanır, yani sanal kameraya da yansır.
+
+**Dolgu** açıkken görüntü 16:9 çerçeveyi tamamen doldurur, taşan kenarlar kırpılır — telefonu dik
+tutsan bile kamera yatay görünür, siyah bant olmaz. Kapatırsan görüntünün tamamı sığdırılır ve
+boşluklar siyahla doldurulur. En keskin sonuç için telefonu yan çevir: o zaman kırpma da olmaz.
+
+### Kopmalara dayanıklılık
+
+Bir kez başlattıktan sonra yayın "yapışkan"dır: sayfa açık olduğu sürece telefon ağa döndüğünde,
+ekran açıldığında veya WiFi değiştiğinde kendiliğinden geri gelir — tekrar düğmeye basman gerekmez.
+Sunucu da telefon koptuğunda 12 saniye boyunca **son kareyi donmuş halde** tutar, ancak ondan sonra
+"bekleniyor" kartına düşer; böylece kısa kesintiler toplantıda fark edilmez.
+
+Yayın sırasında ekranın kendiliğinden kapanmaması için Screen Wake Lock kullanılır. Ancak iOS,
+uygulama arka plana atıldığında veya ekranı güç tuşuyla kilitlediğinde kamerayı zorla kapatır —
+bunu hiçbir web sayfası aşamaz. Telefonu tekrar açtığında yayın 1-2 saniye içinde kendi başına döner.
 
 Sunucu tarafı ortam değişkenleriyle ayarlanır:
 
