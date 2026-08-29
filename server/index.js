@@ -23,8 +23,6 @@ let publisherMode = null;
 let lastError = null;
 let frames = 0;
 let framesBytes = 0;
-let idleTimer = null;
-
 // Telefon kisa sureligine kopunca (ekran kilidi, WiFi gecisi) hemen "bekleniyor"
 // kartina dusme: ffmpeg'i calisir birak, tuketiciler son kareyi donmus gorsun.
 const RECONNECT_GRACE_MS = 12000;
@@ -81,15 +79,8 @@ async function goIdle(reason = "iPhone bekleniyor", { grace = 0 } = {}) {
   const had = !!publisher;
   publisher = null;
   publisherMode = null;
-  clearTimeout(idleTimer);
   await rtc.close();
-
-  if (grace > 0 && sink.mode !== "idle" && sink.mode !== "off") {
-    // ffmpeg oldugu gibi kalir; girdi kesildigi icin son kare donar
-    idleTimer = setTimeout(() => sink.startIdle(reason).then(syncTray), grace);
-  } else {
-    await sink.startIdle(reason);
-  }
+  await sink.stopSource({ freezeMs: grace, text: reason });
   syncTray();
   if (had) notify("localCam", "Telefon yayini durdu");
 }
@@ -103,18 +94,16 @@ async function takeOver(ws) {
   }
   publisher = ws;
   lastError = null;
-  clearTimeout(idleTimer);
 }
 
 sink.on("crash", ({ mode, code, stderr }) => {
   const detail = stderr.split("\n").filter(Boolean).pop() || `cikis kodu ${code}`;
   log(`ffmpeg (${mode}) durdu: ${detail}`);
+  if (mode === "writer") return; // kendi kendine yeniden baslar (yukarida loglandi)
   send(publisher, { t: "error", message: `ffmpeg durdu: ${detail}` });
-  if (mode !== "idle") {
-    lastError = detail;
-    syncTray();
-    goIdle("yayin koptu");
-  }
+  lastError = detail;
+  syncTray();
+  goIdle("yayin koptu");
 });
 
 // --------------------------------------------------------------- HTTP(S) --
@@ -240,14 +229,6 @@ wss.on("connection", (ws) => {
           notify("localCam", "iPhone bagli - MJPEG");
           break;
         }
-        case "geometry": {
-          // Telefon yon degistirdiginde sanal kamera da ayni sekle gecer
-          const changed = await sink.setGeometry(msg.width, msg.height);
-          if (changed && publisherMode === "webrtc") rtc.requestKeyframe();
-          if (changed) log(`cozunurluk: ${sink.geometry.width}x${sink.geometry.height}`);
-          send(ws, { t: "geometry", ...sink.geometry });
-          break;
-        }
         case "transform":
           await sink.setTransform({
             mirror: !!msg.mirror,
@@ -302,7 +283,7 @@ async function shutdown() {
 
 const check = sink.check();
 if (!check.ok) log(`UYARI: ${check.reason}`);
-else await sink.startIdle();
+else await sink.start();
 
 if (certs.regenerated) log("sunucu sertifikasi guncellendi (IP degismis olabilir)");
 

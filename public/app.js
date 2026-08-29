@@ -243,8 +243,6 @@ async function startStreaming({ user = true } = {}) {
       setStatus("kamera durdu, yeniden baglaniyor", "warn");
     });
 
-    sendGeometry();
-
     if (els.mode.value === "webrtc") await startWebRtc(stream);
     else startMjpeg(stream);
 
@@ -361,22 +359,8 @@ function supervise() {
 }
 
 setInterval(supervise, 2000);
-// Telefon donunce kamera olculeri degisir; sunucuya bildirip cihazi uyarla
-setInterval(() => { if (S.streaming) sendGeometry(); }, 1000);
 
 // ------------------------------------------------------------------ olaylar --
-
-let lastGeometry = "";
-
-/** Kameranin gercek kare olculerini sunucuya bildir; sanal kamera ona uyar. */
-function sendGeometry() {
-  const st = S.stream?.getVideoTracks?.()[0]?.getSettings?.();
-  if (!st?.width || !st?.height) return;
-  const key = `${st.width}x${st.height}`;
-  if (key === lastGeometry) return;
-  lastGeometry = key;
-  send({ t: "geometry", width: st.width, height: st.height });
-}
 
 function sendTransform() {
   send({ t: "transform", mirror: S.mirror, rotate: S.rotate });
@@ -419,7 +403,6 @@ for (const el of [els.camera, els.res, els.mode]) {
   });
 }
 
-window.addEventListener("orientationchange", () => setTimeout(sendGeometry, 400));
 
 const prefs = loadPrefs();
 connect();
