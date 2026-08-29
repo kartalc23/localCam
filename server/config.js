@@ -32,6 +32,6 @@ export const config = {
   runDir: path.join(ROOT, ".run"),
 
   ffmpeg: process.env.LOCALCAM_FFMPEG || "ffmpeg",
-  ffmpegLog: process.env.LOCALCAM_FFLOG || "error",
+  ffmpegLog: process.env.LOCALCAM_FFLOG || "info",
   verbose: process.env.LOCALCAM_VERBOSE === "1",
 };

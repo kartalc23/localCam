@@ -25,27 +25,16 @@ function outputArgs() {
 /** Telefon dikey/yatay dondugunde cihaz cozunurlugu sabit kalsin diye
  *  goruntu her zaman WxH icine sigdirilip ortalanir.
  *  Ayna/dondurme sunucu tarafinda uygulanir ki iki yayin modunda da ayni davransin. */
-function scaleFilter({ mirror = false, rotate = 0, fill = true } = {}, geometry) {
-  // Dondurme uygulaninca en/boy yer degistirir, hedef cerceve de ona gore doner
-  const rotated = rotate === 90 || rotate === 270;
-  const w = rotated ? geometry.height : geometry.width;
-  const h = rotated ? geometry.width : geometry.height;
+/* Goruntuye olcek/kirpma UYGULANMAZ: telefondan gelen kare oldugu gibi cihaza yazilir,
+   cihazin cozunurlugu da o kareden belirlenir. Boylece zoom/esneme/siyah bant olusmaz.
+   Sadece kullanicinin actigi ayna ve dondurme filtreleri eklenir. */
+function videoFilter({ mirror = false, rotate = 0 } = {}) {
   const pre = [];
   if (mirror) pre.push("hflip");
   if (rotate === 90) pre.push("transpose=1");
   else if (rotate === 180) pre.push("transpose=1", "transpose=1");
   else if (rotate === 270) pre.push("transpose=2");
-
-  // fill: cerceveyi tamamen doldur, tasan kismi kirp (siyah bant yok)
-  // fit : goruntunun tamamini sigdir, bosluklari siyahla doldur
-  const fitting = fill
-    ? [`scale=${w}:${h}:force_original_aspect_ratio=increase:flags=bicubic`, `crop=${w}:${h}`]
-    : [
-        `scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=bicubic`,
-        `pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`,
-      ];
-
-  return [...pre, ...fitting, "format=yuv420p"].join(",");
+  return [...pre, "format=yuv420p"].join(",");
 }
 
 function idleFilter(text, { width: w, height: h }) {
@@ -64,9 +53,10 @@ export class V4L2Sink extends EventEmitter {
     this.mode = "off";
     this.queue = Promise.resolve();
     this.startedAt = 0;
-    this.transform = { mirror: false, rotate: 0, fill: true };
+    this.transform = { mirror: false, rotate: 0 };
     // Sanal kameranin gecerli cozunurlugu: telefon yonunu bildirdikce degisir
     this.geometry = { width: config.width, height: config.height };
+    this.sourceSize = null;
     this.lastRtp = null;
   }
 
@@ -89,7 +79,6 @@ export class V4L2Sink extends EventEmitter {
     this.transform = {
       mirror: !!next.mirror,
       rotate: [0, 90, 180, 270].includes(next.rotate) ? next.rotate : 0,
-      fill: next.fill !== false,
     };
     return this.#restartCurrent();
   }
@@ -121,11 +110,14 @@ export class V4L2Sink extends EventEmitter {
     this.proc = proc;
     this.mode = mode;
     this.startedAt = startedAt;
+    if (mode !== "idle") this.sourceSize = null;
 
     let stderr = "";
     proc.stderr.on("data", (d) => {
       const s = d.toString();
       stderr = (stderr + s).slice(-4000);
+      const m = s.match(/Video:.*?, (\d{2,4})x(\d{2,4})/);
+      if (m) this.sourceSize = `${m[1]}x${m[2]}`;
       if (config.verbose) process.stderr.write(`[ffmpeg:${mode}] ${s}`);
     });
 
@@ -177,7 +169,7 @@ export class V4L2Sink extends EventEmitter {
       await this.#kill();
       if (!this.check().ok) return;
       this.#spawn("idle", [
-        "-hide_banner", "-loglevel", config.ffmpegLog, "-nostdin",
+        "-hide_banner", "-loglevel", config.ffmpegLog, "-nostats", "-nostdin",
         "-re", "-f", "lavfi", "-i", `color=c=0x0D1117:s=${this.geometry.width}x${this.geometry.height}:r=10`,
         "-vf", idleFilter(text, this.geometry),
         ...outputArgs(),
@@ -207,13 +199,13 @@ export class V4L2Sink extends EventEmitter {
       fs.writeFileSync(sdpPath, sdp);
 
       this.#spawn("webrtc", [
-        "-hide_banner", "-loglevel", config.ffmpegLog, "-nostdin",
+        "-hide_banner", "-loglevel", config.ffmpegLog, "-nostats", "-nostdin",
         "-protocol_whitelist", "file,udp,rtp",
         "-fflags", "nobuffer", "-flags", "low_delay",
         "-probesize", "200000", "-analyzeduration", "2000000",
         "-max_delay", "0", "-reorder_queue_size", "64",
         "-i", sdpPath,
-        "-vf", scaleFilter(this.transform, this.geometry),
+        "-vf", videoFilter(this.transform),
         "-r", String(config.fps),
         ...outputArgs(),
       ]);
@@ -227,9 +219,9 @@ export class V4L2Sink extends EventEmitter {
       const proc = this.#spawn(
         "mjpeg",
         [
-          "-hide_banner", "-loglevel", config.ffmpegLog,
+          "-hide_banner", "-loglevel", config.ffmpegLog, "-nostats",
           "-f", "mjpeg", "-use_wallclock_as_timestamps", "1", "-i", "pipe:0",
-          "-vf", scaleFilter(this.transform, this.geometry),
+          "-vf", videoFilter(this.transform),
           "-r", String(config.fps),
           ...outputArgs(),
         ],

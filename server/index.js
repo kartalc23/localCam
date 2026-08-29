@@ -127,6 +127,7 @@ function statusJson() {
     connected: !!publisher,
     publisherMode,
     resolution: `${sink.geometry.width}x${sink.geometry.height}@${config.fps}`,
+    sourceResolution: sink.sourceSize,
     transform: sink.transform,
     webrtc: rtc.stats,
     mjpeg: { frames, bytes: framesBytes },

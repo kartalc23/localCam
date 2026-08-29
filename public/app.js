@@ -15,17 +15,20 @@ const S = {
   reconnectDelay: 500, lastBytes: 0, lastAt: 0, mjpegFrames: 0,
 };
 
-const BITRATE = { "1920x1080": 5_000_000, "1280x720": 3_000_000, "960x540": 1_800_000 };
+const BITRATE = {
+  "1440x1080": 5_000_000, "1920x1080": 5_000_000,
+  "1280x960": 3_500_000, "1280x720": 3_000_000, "960x540": 1_800_000,
+};
 
 // ------------------------------------------------------------- ayar hafizasi --
 
 const PREFS = "localcam.prefs";
-const PREFS_VERSION = 2; // 2: varsayilan cozunurluk 1080p'ye tasindi
+const PREFS_VERSION = 3; // 3: varsayilan 4:3 genis aciya tasindi (iPhone sensoru 4:3)
 
 function loadPrefs() {
   let p = {};
   try { p = JSON.parse(localStorage.getItem(PREFS) || "{}"); } catch { /* bozuk kayit */ }
-  // Eski surumden gelen cozunurluk tercihi bir kez atlanir ki yeni varsayilan (1080p) gecsin
+  // Surum atlayinca kaydedilmis cozunurluk bir kez yok sayilir, yeni varsayilan gecer
   const fresh = p.v !== PREFS_VERSION;
   if (!fresh && p.res && [...els.res.options].some((o) => o.value === p.res)) els.res.value = p.res;
   if (p.mode) els.mode.value = p.mode;

@@ -58,6 +58,7 @@
   <dl>
     <dt>Sanal kamera</dt><dd id="device">-</dd>
     <dt>Cozunurluk</dt><dd id="res">-</dd>
+    <dt>Telefondan gelen</dt><dd id="src">-</dd>
     <dt>Yontem</dt><dd id="mode">-</dd>
     <dt>mDNS</dt><dd id="mdns">-</dd>
   </dl>
@@ -75,6 +76,7 @@ async function tick() {
     $("url").value = s.phoneUrl;
     $("device").textContent = s.device + (s.deviceReady ? "" : "  (yok!)");
     $("res").textContent = s.resolution;
+    $("src").textContent = s.sourceResolution || "-";
     $("mdns").textContent = s.mdnsUrl;
     $("mode").textContent = s.connected ? (s.publisherMode === "webrtc" ? "WebRTC / H.264" : "MJPEG") : "-";
 
