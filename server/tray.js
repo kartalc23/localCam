@@ -125,7 +125,9 @@ class ItemInterface extends Interface {
   get Category() { return "Hardware"; }
   get Id() { return "localcam"; }
   get Title() { return "localCam"; }
-  get Status() { return this.tray.state === "live" ? "Active" : "Passive"; }
+  // Her zaman "Active": bircok panel (Noctalia dahil) Passive ogeleri gizliyor.
+  // Baglanti durumu ikonun rengiyle anlatiliyor.
+  get Status() { return "Active"; }
   get WindowId() { return 0; }
   get IconName() { return ""; }
   get IconPixmap() { return pixmapsFor(this.tray.state); }
@@ -247,10 +249,7 @@ export class Tray {
     if (tooltip) this.tooltip = tooltip;
     if (!this.item) return;
     try {
-      if (changed) {
-        this.item.NewIcon();
-        this.item.NewStatus(state === "live" ? "Active" : "Passive");
-      }
+      if (changed) this.item.NewIcon();
       this.item.NewToolTip();
       this.menu?.refresh();
     } catch { /* bar kapanmis olabilir */ }
