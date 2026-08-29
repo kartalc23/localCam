@@ -10,7 +10,7 @@ const els = {
 
 const S = {
   ws: null, pc: null, stream: null, streaming: false, wakeLock: null,
-  desired: false, starting: false, fill: true,
+  desired: false, starting: false,
   mirror: false, rotate: 0, mjpegTimer: null, statsTimer: null,
   reconnectDelay: 500, lastBytes: 0, lastAt: 0, mjpegFrames: 0,
 };
@@ -31,9 +31,7 @@ function loadPrefs() {
   if (p.mode) els.mode.value = p.mode;
   S.mirror = !!p.mirror;
   S.rotate = Number(p.rotate) || 0;
-  S.fill = p.fill !== false;
   S.auto = p.auto !== false; // varsayilan acik: uygulamayi acinca yayina gecsin
-  els.fill.setAttribute("aria-pressed", String(S.fill));
   els.mirror.setAttribute("aria-pressed", String(S.mirror));
   els.video.classList.toggle("mirror", S.mirror);
   els.rotate.textContent = `${S.rotate}\u00b0`;
@@ -48,7 +46,7 @@ function savePrefs() {
     localStorage.setItem(PREFS, JSON.stringify({
       res: els.res.value, mode: els.mode.value, camera: els.camera.value,
       v: PREFS_VERSION,
-      mirror: S.mirror, rotate: S.rotate, fill: S.fill, auto: S.auto,
+      mirror: S.mirror, rotate: S.rotate, auto: S.auto,
     }));
   } catch { /* ozel mod olabilir */ }
 }
@@ -238,6 +236,8 @@ async function startStreaming({ user = true } = {}) {
       setStatus("kamera durdu, yeniden baglaniyor", "warn");
     });
 
+    sendGeometry();
+
     if (els.mode.value === "webrtc") await startWebRtc(stream);
     else startMjpeg(stream);
 
@@ -255,7 +255,6 @@ async function startStreaming({ user = true } = {}) {
   } finally {
     S.starting = false;
     els.start.disabled = false;
-    updateOrientationHint();
   }
 }
 
@@ -276,7 +275,6 @@ function stopStreaming({ keepCamera = false, user = true } = {}) {
   els.start.textContent = "Yayini baslat";
   els.start.classList.remove("live");
   els.stats.hidden = true;
-  els.orientHint.hidden = true;
   setStatus(S.desired ? "yeniden baglaniyor" : "durduruldu", S.desired ? "warn" : "");
 }
 
@@ -356,21 +354,28 @@ function supervise() {
 }
 
 setInterval(supervise, 2000);
+// Telefon donunce kamera olculeri degisir; sunucuya bildirip cihazi uyarla
+setInterval(() => { if (S.streaming) sendGeometry(); }, 1000);
 
 // ------------------------------------------------------------------ olaylar --
 
+let lastGeometry = "";
+
+/** Kameranin gercek kare olculerini sunucuya bildir; sanal kamera ona uyar. */
+function sendGeometry() {
+  const st = S.stream?.getVideoTracks?.()[0]?.getSettings?.();
+  if (!st?.width || !st?.height) return;
+  const key = `${st.width}x${st.height}`;
+  if (key === lastGeometry) return;
+  lastGeometry = key;
+  send({ t: "geometry", width: st.width, height: st.height });
+}
+
 function sendTransform() {
-  send({ t: "transform", mirror: S.mirror, rotate: S.rotate, fill: S.fill });
+  send({ t: "transform", mirror: S.mirror, rotate: S.rotate });
 }
 
 /** Dikey tutuldugunda kullaniciyi uyar: yatay tutarsa kare tam dolar. */
-function updateOrientationHint() {
-  const track = S.stream?.getVideoTracks?.()[0];
-  const st = track?.getSettings?.();
-  const portrait = st?.width && st?.height ? st.height > st.width : window.innerHeight > window.innerWidth;
-  els.orientHint.hidden = !(S.streaming && portrait);
-}
-
 els.start.addEventListener("click", () => (S.streaming ? stopStreaming() : startStreaming()));
 
 els.auto.addEventListener("click", () => {
@@ -378,13 +383,6 @@ els.auto.addEventListener("click", () => {
   els.auto.setAttribute("aria-pressed", String(S.auto));
   els.auto.textContent = S.auto ? "Acik" : "Kapali";
   savePrefs();
-});
-
-els.fill.addEventListener("click", () => {
-  S.fill = !S.fill;
-  els.fill.setAttribute("aria-pressed", String(S.fill));
-  savePrefs();
-  sendTransform();
 });
 
 els.mirror.addEventListener("click", () => {
@@ -414,8 +412,7 @@ for (const el of [els.camera, els.res, els.mode]) {
   });
 }
 
-window.addEventListener("orientationchange", () => setTimeout(updateOrientationHint, 400));
-window.addEventListener("resize", updateOrientationHint);
+window.addEventListener("orientationchange", () => setTimeout(sendGeometry, 400));
 
 const prefs = loadPrefs();
 connect();

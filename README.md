@@ -60,11 +60,17 @@ Kamera izni HTTPS istediği için sunucu kendi yerel CA'sını üretip sertifika
 ## Ayarlar
 
 Telefon arayüzünden: kamera (ön/arka/geniş açı), çözünürlük (540p/720p/1080p), yöntem (WebRTC/MJPEG),
-**Dolgu**, ayna ve 90° döndürme. Hepsi sunucu tarafında uygulanır, yani sanal kameraya da yansır.
+ayna ve 90° döndürme. Ayna/döndürme sunucu tarafında uygulanır, yani sanal kameraya da yansır.
 
-**Dolgu** açıkken görüntü 16:9 çerçeveyi tamamen doldurur, taşan kenarlar kırpılır — telefonu dik
-tutsan bile kamera yatay görünür, siyah bant olmaz. Kapatırsan görüntünün tamamı sığdırılır ve
-boşluklar siyahla doldurulur. En keskin sonuç için telefonu yan çevir: o zaman kırpma da olmaz.
+### Yön takibi
+
+Sanal kamera telefonun yönünü takip eder: telefonu yatay tutunca cihaz **1920x1080**, dikey tutunca
+**1080x1920** olur. Görüntü kırpılmaz, esnetilmez, siyah bantla doldurulmaz — kare neyse o.
+Telefon yayın sırasında döndürüldüğünde cihaz kendini yeni şekle göre yeniden kurar.
+
+Bunun bir bedeli var: v4l2 cihazının çözünürlüğü değiştiği için, kamerayı o sırada açık tutan
+uygulama (Zoom, OBS) görüntüyü kaybedebilir ve kamerayı yeniden seçmen gerekebilir. Görüşme
+sırasında telefonu döndürmemek en iyisi; hangi yönde kullanacaksan yayını o yönde başlat.
 
 ### Kopmalara dayanıklılık
 
@@ -90,9 +96,6 @@ Sunucu tarafı ortam değişkenleriyle ayarlanır:
 | `LOCALCAM_ICE_PORTS` | `50000-50019` | WebRTC ICE için sabit UDP aralığı (güvenlik duvarı kuralı buna göre) |
 | `LOCALCAM_FFLOG` | `error` | ffmpeg log seviyesi (`info` ile ayrıntı) |
 | `LOCALCAM_VERBOSE` | `0` | `1` yapınca ffmpeg/WebRTC ayrıntıları |
-
-Cihaz çözünürlüğü sabittir: telefon dikey tutulsa da görüntü 1280x720 çerçeveye ortalanır, böylece
-yayın sırasında telefonu döndürünce kamerayı kullanan uygulama kopmaz.
 
 ## Sorun giderme
 

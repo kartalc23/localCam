@@ -25,8 +25,11 @@ function outputArgs() {
 /** Telefon dikey/yatay dondugunde cihaz cozunurlugu sabit kalsin diye
  *  goruntu her zaman WxH icine sigdirilip ortalanir.
  *  Ayna/dondurme sunucu tarafinda uygulanir ki iki yayin modunda da ayni davransin. */
-function scaleFilter({ mirror = false, rotate = 0, fill = true } = {}) {
-  const { width: w, height: h } = config;
+function scaleFilter({ mirror = false, rotate = 0, fill = true } = {}, geometry) {
+  // Dondurme uygulaninca en/boy yer degistirir, hedef cerceve de ona gore doner
+  const rotated = rotate === 90 || rotate === 270;
+  const w = rotated ? geometry.height : geometry.width;
+  const h = rotated ? geometry.width : geometry.height;
   const pre = [];
   if (mirror) pre.push("hflip");
   if (rotate === 90) pre.push("transpose=1");
@@ -45,8 +48,7 @@ function scaleFilter({ mirror = false, rotate = 0, fill = true } = {}) {
   return [...pre, ...fitting, "format=yuv420p"].join(",");
 }
 
-function idleFilter(text) {
-  const { width: w, height: h } = config;
+function idleFilter(text, { width: w, height: h }) {
   const safe = String(text).replace(/['\\]/g, "");
   return [
     `drawtext=font=${FONT}:text='localCam':fontcolor=0xE6EDF3:fontsize=${Math.round(h / 9)}:x=(w-tw)/2:y=(h/2)-th`,
@@ -63,7 +65,23 @@ export class V4L2Sink extends EventEmitter {
     this.queue = Promise.resolve();
     this.startedAt = 0;
     this.transform = { mirror: false, rotate: 0, fill: true };
+    // Sanal kameranin gecerli cozunurlugu: telefon yonunu bildirdikce degisir
+    this.geometry = { width: config.width, height: config.height };
     this.lastRtp = null;
+  }
+
+  /** Telefon yon degistirince cihaz cozunurlugunu ona uyarlar. */
+  async setGeometry(width, height) {
+    const w = Math.round(width);
+    const h = Math.round(height);
+    if (!w || !h || w > 4096 || h > 4096) return null;
+    if (w === this.geometry.width && h === this.geometry.height) return null;
+    this.geometry = { width: w, height: h };
+    return this.#restartCurrent();
+  }
+
+  #restartCurrent() {
+    return this.#restartCurrent();
   }
 
   /** Ayna/dondurme degisince o anki yayin ayni ayarlarla yeniden baslatilir. */
@@ -73,10 +91,7 @@ export class V4L2Sink extends EventEmitter {
       rotate: [0, 90, 180, 270].includes(next.rotate) ? next.rotate : 0,
       fill: next.fill !== false,
     };
-    if (this.mode === "webrtc" && this.lastRtp) return this.startRtp(this.lastRtp);
-    if (this.mode === "mjpeg") return this.startMjpeg();
-    if (this.mode === "idle") return this.startIdle();
-    return null;
+    return this.#restartCurrent();
   }
 
   /** Cihaz var mi ve yazilabilir mi? */
@@ -163,8 +178,8 @@ export class V4L2Sink extends EventEmitter {
       if (!this.check().ok) return;
       this.#spawn("idle", [
         "-hide_banner", "-loglevel", config.ffmpegLog, "-nostdin",
-        "-re", "-f", "lavfi", "-i", `color=c=0x0D1117:s=${config.width}x${config.height}:r=10`,
-        "-vf", idleFilter(text),
+        "-re", "-f", "lavfi", "-i", `color=c=0x0D1117:s=${this.geometry.width}x${this.geometry.height}:r=10`,
+        "-vf", idleFilter(text, this.geometry),
         ...outputArgs(),
       ]);
     });
@@ -198,7 +213,7 @@ export class V4L2Sink extends EventEmitter {
         "-probesize", "200000", "-analyzeduration", "2000000",
         "-max_delay", "0", "-reorder_queue_size", "64",
         "-i", sdpPath,
-        "-vf", scaleFilter(this.transform),
+        "-vf", scaleFilter(this.transform, this.geometry),
         "-r", String(config.fps),
         ...outputArgs(),
       ]);
@@ -214,7 +229,7 @@ export class V4L2Sink extends EventEmitter {
         [
           "-hide_banner", "-loglevel", config.ffmpegLog,
           "-f", "mjpeg", "-use_wallclock_as_timestamps", "1", "-i", "pipe:0",
-          "-vf", scaleFilter(this.transform),
+          "-vf", scaleFilter(this.transform, this.geometry),
           "-r", String(config.fps),
           ...outputArgs(),
         ],

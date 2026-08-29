@@ -65,7 +65,7 @@ function syncTray() {
   if (lastError) return tray.setState("error", lastError);
   if (publisher) {
     const mode = publisherMode === "webrtc" ? "H.264" : "MJPEG";
-    return tray.setState("live", `yayinda (${mode}) - ${config.width}x${config.height}`);
+    return tray.setState("live", `yayinda (${mode}) - ${sink.geometry.width}x${sink.geometry.height}`);
   }
   const check = sink.check();
   tray.setState(check.ok ? "idle" : "error", check.ok ? "iPhone bekleniyor" : check.reason);
@@ -126,7 +126,7 @@ function statusJson() {
     sinkMode: sink.mode,
     connected: !!publisher,
     publisherMode,
-    resolution: `${config.width}x${config.height}@${config.fps}`,
+    resolution: `${sink.geometry.width}x${sink.geometry.height}@${config.fps}`,
     transform: sink.transform,
     webrtc: rtc.stats,
     mjpeg: { frames, bytes: framesBytes },
@@ -237,6 +237,14 @@ wss.on("connection", (ws) => {
           log("MJPEG yayini basladi");
           syncTray();
           notify("localCam", "iPhone bagli - MJPEG");
+          break;
+        }
+        case "geometry": {
+          // Telefon yon degistirdiginde sanal kamera da ayni sekle gecer
+          const changed = await sink.setGeometry(msg.width, msg.height);
+          if (changed && publisherMode === "webrtc") rtc.requestKeyframe();
+          if (changed) log(`cozunurluk: ${sink.geometry.width}x${sink.geometry.height}`);
+          send(ws, { t: "geometry", ...sink.geometry });
           break;
         }
         case "transform":
