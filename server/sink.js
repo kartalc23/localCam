@@ -6,6 +6,13 @@ import { config } from "./config.js";
 
 const FONT = "sans";
 
+// v4l2loopback'te onceki yazici cikarken cihaz kisa sure mesgul kalabilir;
+// bu hatalarla erken olen ffmpeg yeniden denenir.
+const DEVICE_BUSY = /Invalid argument|Device or resource busy|Cannot open|Permission denied/i;
+const RETRY_MAX = 4;
+const RETRY_DELAY = 400;
+const SETTLE_MS = 150;
+
 /** Normalde v4l2 cihazina yazariz. Hata ayiklarken LOCALCAM_DEVICE=out.mp4 gibi
  *  bir dosya (veya "null") verilerek ayni boru hatti cihazsiz test edilebilir. */
 function outputArgs() {
@@ -87,11 +94,12 @@ export class V4L2Sink extends EventEmitter {
     return this.queue;
   }
 
-  #spawn(mode, args, { stdin = "ignore" } = {}) {
+  #spawn(mode, args, { stdin = "ignore", attempt = 0 } = {}) {
     const proc = spawn(config.ffmpeg, args, { stdio: [stdin, "ignore", "pipe"] });
+    const startedAt = Date.now();
     this.proc = proc;
     this.mode = mode;
-    this.startedAt = Date.now();
+    this.startedAt = startedAt;
 
     let stderr = "";
     proc.stderr.on("data", (d) => {
@@ -105,6 +113,14 @@ export class V4L2Sink extends EventEmitter {
       this.proc = null;
       this.mode = "off";
       const clean = signal === "SIGTERM" || signal === "SIGKILL";
+
+      if (!clean && attempt < RETRY_MAX && Date.now() - startedAt < 2500 && DEVICE_BUSY.test(stderr)) {
+        setTimeout(() => {
+          if (!this.proc) this.#spawn(mode, args, { stdin, attempt: attempt + 1 });
+        }, RETRY_DELAY);
+        return;
+      }
+
       if (!clean) this.emit("crash", { mode, code, stderr: stderr.trim() });
       this.emit("changed", this.mode);
     });
@@ -123,7 +139,8 @@ export class V4L2Sink extends EventEmitter {
       const timer = setTimeout(() => proc.kill("SIGKILL"), 1500);
       proc.once("exit", () => {
         clearTimeout(timer);
-        resolve();
+        // cekirdek yaziciyi birakana kadar kisa bir nefes
+        setTimeout(resolve, SETTLE_MS);
       });
       proc.kill("SIGTERM");
     });
